@@ -120,6 +120,7 @@ class TTS(nn.Module):
                         noise_scale_w=noise_scale_w,
                         length_scale=1. / speed,
                     )[0][0, 0].data.cpu().float().numpy()
+                print("\n\naudio:",audio)
                 del x_tst, tones, lang_ids, bert, ja_bert, x_tst_lengths, speakers
                 # 
             audio_list.append(audio)
@@ -133,3 +134,116 @@ class TTS(nn.Module):
                 soundfile.write(output_path, audio, self.hps.data.sampling_rate, format=format)
             else:
                 soundfile.write(output_path, audio, self.hps.data.sampling_rate)
+                
+    async def tts_to_file_async(self, text, speaker_id, output_path=None, sdp_ratio=0.2, noise_scale=0.6, noise_scale_w=0.8, speed=1.0, pbar=None, format=None, position=None, quiet=False,):
+        language = self.language
+        texts = self.split_sentences_into_pieces(text, language, quiet)
+        audio_list = []
+        if pbar:
+            tx = pbar(texts)
+        else:
+            if position:
+                tx = tqdm(texts, position=position)
+            elif quiet:
+                tx = texts
+            else:
+                tx = tqdm(texts)
+        for t in tx:
+            if language in ['EN', 'ZH_MIX_EN']:
+                t = re.sub(r'([a-z])([A-Z])', r'\1 \2', t)
+            device = self.device
+            bert, ja_bert, phones, tones, lang_ids = utils.get_text_for_tts_infer(t, language, self.hps, device, self.symbol_to_id)
+            with torch.no_grad():
+                x_tst = phones.to(device).unsqueeze(0)
+                tones = tones.to(device).unsqueeze(0)
+                lang_ids = lang_ids.to(device).unsqueeze(0)
+                bert = bert.to(device).unsqueeze(0)
+                ja_bert = ja_bert.to(device).unsqueeze(0)
+                x_tst_lengths = torch.LongTensor([phones.size(0)]).to(device)
+                del phones
+                speakers = torch.LongTensor([speaker_id]).to(device)
+                audio = self.model.infer(
+                        x_tst,
+                        x_tst_lengths,
+                        speakers,
+                        tones,
+                        lang_ids,
+                        bert,
+                        ja_bert,
+                        sdp_ratio=sdp_ratio,
+                        noise_scale=noise_scale,
+                        noise_scale_w=noise_scale_w,
+                        length_scale=1. / speed,
+                    )[0][0, 0].data.cpu().float().numpy()
+                print("\n\naudio:",audio)
+                del x_tst, tones, lang_ids, bert, ja_bert, x_tst_lengths, speakers
+                yield audio
+            audio_list.append(audio)
+        torch.cuda.empty_cache()
+        audio = self.audio_numpy_concat(audio_list, sr=self.hps.data.sampling_rate, speed=speed)
+
+        if output_path is None:
+            yield audio
+        else:
+            if format:
+                soundfile.write(output_path, audio, self.hps.data.sampling_rate, format=format)
+            else:
+                soundfile.write(output_path, audio, self.hps.data.sampling_rate)
+                
+    async def tts_to_file_generator(self, text, speaker_id, output_path=None, sdp_ratio=0.2, noise_scale=0.6, noise_scale_w=0.8, speed=1.0, pbar=None, format=None, position=None, quiet=False):
+        language = self.language
+        texts = self.split_sentences_into_pieces(text, language, quiet)
+
+        if pbar:
+            tx = pbar(texts)
+        else:
+            if position:
+                tx = tqdm(texts, position=position)
+            elif quiet:
+                tx = texts
+            else:
+                tx = tqdm(texts)
+
+        for t in tx:
+            if language in ['EN', 'ZH_MIX_EN']:
+                t = re.sub(r'([a-z])([A-Z])', r'\1 \2', t)
+
+            device = self.device
+            bert, ja_bert, phones, tones, lang_ids = utils.get_text_for_tts_infer(t, language, self.hps, device, self.symbol_to_id)
+
+            with torch.no_grad():
+                x_tst = phones.to(device).unsqueeze(0)
+                tones = tones.to(device).unsqueeze(0)
+                lang_ids = lang_ids.to(device).unsqueeze(0)
+                bert = bert.to(device).unsqueeze(0)
+                ja_bert = ja_bert.to(device).unsqueeze(0)
+                x_tst_lengths = torch.LongTensor([phones.size(0)]).to(device)
+                del phones
+                speakers = torch.LongTensor([speaker_id]).to(device)
+
+                # Inference to generate the audio chunk
+                audio = self.model.infer(
+                    x_tst,
+                    x_tst_lengths,
+                    speakers,
+                    tones,
+                    lang_ids,
+                    bert,
+                    ja_bert,
+                    sdp_ratio=sdp_ratio,
+                    noise_scale=noise_scale,
+                    noise_scale_w=noise_scale_w,
+                    length_scale=1. / speed,
+                )[0][0, 0].data.cpu().float().numpy()
+
+                # Clean up to free GPU memory
+                del x_tst, tones, lang_ids, bert, ja_bert, x_tst_lengths, speakers
+                torch.cuda.empty_cache()
+
+                # Yield each generated audio chunk
+                if output_path is not None:
+                    soundfile.write(output_path, audio, self.hps.data.sampling_rate, format=format if format else 'WAV')
+                
+                yield audio  # Yield the audio chunk immediately
+        return
+        
