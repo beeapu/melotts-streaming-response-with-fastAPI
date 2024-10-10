@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTS Frontend</title>
+</head>
+<body>
+    <h1>Text-to-Speech Demo</h1>
+
+    <form id="ttsForm">
+        <label for="text">Enter text:</label><br>
+        <textarea id="text" name="text" rows="4" cols="50"></textarea><br><br>
+
+        <label for="language">Select language:</label><br>
+        <select id="language">
+            <option value="EN">English</option>
+            <option value="ES">Spanish</option>
+            <option value="FR">French</option>
+            <!-- Add more language options if needed -->
+        </select><br><br>
+
+        <label for="speaker">Select speaker:</label><br>
+        <input type="text" id="speaker" value="EN-US"><br><br>
+
+        <label for="speed">Speed:</label><br>
+        <input type="range" id="speed" name="speed" min="0.1" max="2.0" step="0.1" value="1.0"><br><br>
+
+        <button type="submit">Synthesize</button>
+    </form>
+
+    <h2>Generated Audio:</h2>
+    <audio id="audioPlayer" controls></audio>
+
+    <script>
+        const form = document.getElementById('ttsForm');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const asyncSynthesizer=document.getElementById("async");
+        const sync=documentgetElementById("async");
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            const text = document.getElementById('text').value;
+            const language = document.getElementById('language').value;
+            const speaker = document.getElementById('speaker').value;
+            const speed = document.getElementById('speed').value;
+
+            const response = await fetch('http://127.0.0.1:8000/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    text: text,
+                    language: language,
+                    speaker: speaker,
+                    speed: parseFloat(speed)
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                const audioData = result.audio;
+
+                // Convert the hex audio data back to binary and play it
+                const byteArray = new Uint8Array(audioData.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                const blob = new Blob([byteArray], { type: 'audio/wav' });
+                const audioUrl = URL.createObjectURL(blob);
+
+                // Set the audio source to the generated blob URL
+                audioPlayer.src = audioUrl;
+                audioPlayer.play();
+            } else {
+                console.error('Failed to fetch audio:', response.statusText);
+            }
+        });
+    </script>
+</body>
+</html>
