@@ -67,7 +67,7 @@ async def synthesize_stream(payload: SynthesizePayload):
         bio = io.BytesIO()
         models[language].tts_to_file(text, models[language].hps.data.spk2id[speaker], bio, speed=speed, format='wav')
         audio_data = bio.getvalue()
-        return audio_data
+        yield audio_data
 
     return StreamingResponse(audio_stream(), media_type="audio/wav")
 
@@ -79,27 +79,61 @@ async def synthesize_stream(payload: SynthesizePayload):
     speed = payload.speed
 
     async def audio_stream():
-        async for audio_chunk in models[language].tts_to_file_async(
-            text,
-            speaker_id=models[language].hps.data.spk2id[speaker],
-            speed=speed,
-            format='wav'
-        ):
-            bio = io.BytesIO(audio_chunk)
+        bio = io.BytesIO()
+        async for audio_chunk in models[language].tts_to_file_async( text, models[language].hps.data.spk2id[speaker], io.BytesIO(), speed=speed, format='wav'):
             audio_data = bio.getvalue()
             print("One chunk received with length:", len(audio_data))
             yield audio_data 
         # Return a StreamingResponse with the audio stream
     return StreamingResponse(audio_stream(), media_type="audio/wav")
 
-@app.get("/")
-async def get():
-    return HTMLResponse(html)
-
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    while True:
+    try:
         data = await websocket.receive_text()
         await websocket.send_text(f"Message text was: {data}")
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        await websocket.close()
+        
+@app.websocket("/ws2")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            # Continuously receive messages
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Message text was: {data}")
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        await websocket.close()
+        
+@app.websocket("/ws/synthesize")
+async def websocket_synthesize(websocket: WebSocket):
+    await websocket.accept()
+    
+    try:
+        # Receive JSON data from the WebSocket (language, text, speaker, speed)
+        data = await websocket.receive_json()
+        language = data.get('language')
+        text = data.get('text')
+        speaker = data.get('speaker') or list(models[language].hps.data.spk2id.keys())[0]
+        speed = data.get('speed')
+
+        bio = io.BytesIO()
+
+        # Start the asynchronous text-to-speech process and stream audio chunks
+        async for audio_chunk in models[language].tts_to_file_async(text, models[language].hps.data.spk2id[speaker], io.BytesIO(), speed=speed, format='wav'):
+
+            print("creation done hehehehe", len(audio_chunk))
+            await websocket.send_text("Sucess")  # Send audio data as binary to the client
+            # bio.seek(0)
+            # bio.truncate(0)  # Clear buffer for the next chunk
+            
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        await websocket.close()
