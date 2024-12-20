@@ -3,7 +3,7 @@ import uvicorn
 from fastapi import FastAPI, Body, Depends
 from pydantic import BaseModel
 from fastapi.responses import FileResponse
-from melo.api import TTS
+from MeloTTS.melo.api import TTS
 from dotenv import load_dotenv
 import tempfile
 
